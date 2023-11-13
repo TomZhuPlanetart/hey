@@ -16,6 +16,7 @@
 package requester
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/tls"
 	"io"
@@ -24,7 +25,9 @@ import (
 	"net/http/httptrace"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/net/http2"
@@ -52,6 +55,8 @@ type Work struct {
 	Request *http.Request
 
 	RequestBody []byte
+
+	RequestDecoratorFunc func(*http.Request) *http.Request
 
 	// RequestFunc is a function to generate requests. If it is nil, then
 	// Request and RequestData are cloned for each request.
@@ -156,6 +161,11 @@ func (b *Work) makeRequest(c *http.Client) {
 	} else {
 		req = cloneRequest(b.Request, b.RequestBody)
 	}
+
+	if b.RequestDecoratorFunc != nil {
+		req = b.RequestDecoratorFunc(req)
+	}
+
 	trace := &httptrace.ClientTrace{
 		DNSStart: func(info httptrace.DNSStartInfo) {
 			dnsStart = now()
@@ -284,4 +294,49 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func CreateVariableReqDecoratorFunc(variableFile string) (func(req *http.Request) *http.Request, error) {
+	file, err := os.Open(variableFile)
+	if err != nil {
+		return nil, err
+	}
+
+	defer file.Close()
+	var variables [][]string
+
+	buf := bufio.NewReader(file)
+
+	for {
+		line, err := buf.ReadString('\n')
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return nil, err
+		}
+
+		line = strings.Trim(line, "\r\n ")
+		if line == "" {
+			continue
+		}
+
+		variables = append(variables, []string{line})
+	}
+
+	var i = int64(-1)
+	var l = int64(len(variables))
+
+	return func(req *http.Request) *http.Request {
+		index := atomic.AddInt64(&i, 1)
+		index = index % l
+
+		u := req.URL.String()
+		u = strings.Replace(u, "{var0}", variables[index][0], -1)
+		if newURL, err := url.Parse(u); err == nil {
+			req.URL = newURL
+		}
+
+		i += 1
+		return req
+	}, nil
 }

@@ -48,6 +48,7 @@ var (
 	authHeader  = flag.String("a", "", "")
 	hostHeader  = flag.String("host", "", "")
 	userAgent   = flag.String("U", "", "")
+	variables   = flag.String("V", "", "")
 
 	output = flag.String("o", "", "")
 
@@ -92,6 +93,7 @@ Options:
   -a  Basic authentication, username:password.
   -x  HTTP Proxy address as host:port.
   -h2 Enable HTTP/2.
+  -V  The variable file, each line contains a set of variables
 
   -host	HTTP Host header.
 
@@ -221,19 +223,29 @@ func main() {
 
 	req.Header = header
 
+	var decoratorFunc func(*http.Request) *http.Request
+
+	if *variables != "" {
+		decoratorFunc, err = requester.CreateVariableReqDecoratorFunc(*variables)
+		if err != nil {
+			errAndExit("Can not use the variable file")
+		}
+	}
+
 	w := &requester.Work{
-		Request:            req,
-		RequestBody:        bodyAll,
-		N:                  num,
-		C:                  conc,
-		QPS:                q,
-		Timeout:            *t,
-		DisableCompression: *disableCompression,
-		DisableKeepAlives:  *disableKeepAlives,
-		DisableRedirects:   *disableRedirects,
-		H2:                 *h2,
-		ProxyAddr:          proxyURL,
-		Output:             *output,
+		Request:              req,
+		RequestDecoratorFunc: decoratorFunc,
+		RequestBody:          bodyAll,
+		N:                    num,
+		C:                    conc,
+		QPS:                  q,
+		Timeout:              *t,
+		DisableCompression:   *disableCompression,
+		DisableKeepAlives:    *disableKeepAlives,
+		DisableRedirects:     *disableRedirects,
+		H2:                   *h2,
+		ProxyAddr:            proxyURL,
+		Output:               *output,
 	}
 	w.Init()
 
