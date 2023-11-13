@@ -19,12 +19,14 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/tls"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -306,6 +308,7 @@ func CreateVariableReqDecoratorFunc(variableFile string) (func(req *http.Request
 	var variables [][]string
 
 	buf := bufio.NewReader(file)
+	r := regexp.MustCompile("\\s+")
 
 	for {
 		line, err := buf.ReadString('\n')
@@ -320,7 +323,7 @@ func CreateVariableReqDecoratorFunc(variableFile string) (func(req *http.Request
 			continue
 		}
 
-		variables = append(variables, []string{line})
+		variables = append(variables, r.Split(line, -1))
 	}
 
 	var i = int64(-1)
@@ -331,7 +334,12 @@ func CreateVariableReqDecoratorFunc(variableFile string) (func(req *http.Request
 		index = index % l
 
 		u := req.URL.String()
-		u = strings.Replace(u, "{var0}", variables[index][0], -1)
+
+		for i, v := range variables[index] {
+			u = strings.Replace(u, fmt.Sprintf("{var%d}", i), v, -1)
+			u = strings.Replace(u, fmt.Sprintf("$%d$", i), v, -1)
+		}
+
 		if newURL, err := url.Parse(u); err == nil {
 			req.URL = newURL
 		}
